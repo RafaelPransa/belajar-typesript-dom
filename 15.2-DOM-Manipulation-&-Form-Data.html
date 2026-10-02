@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DOM Manipulation & Form Data</title>
+</head>
+
+<body>
+    <h1>Admin Produk</h1>
+
+    <form id="productForm">
+
+        <label for="nama">Nama Produk</label>
+        <input id="nama" type="text" placeholder="Contoh: Keyboard Mechanical">
+
+        <label for="harga">Harga</label>
+        <input id="harga" type="number" placeholder="Contoh: 350000" min="0">
+
+        <label for="stok">Stok</label>
+        <input id="stok" type="number" placeholder="Contoh: 10" min="0">
+
+        <label for="kategori">Kategori</label>
+
+        <select id="kategori">
+            <option value="">Pilih kategori</option>
+            <option value="elektronik">Elektronik</option>
+            <option value="fashion">Fashion</option>
+            <option value="makanan">Makanan</option>
+        </select>
+
+        <button type="submit">
+            Tambah Produk
+        </button>
+
+        <p id="error"></p>
+
+    </form>
+
+    <hr>
+
+    <h2>Daftar Produk</h2>
+
+    <ul id="daftarProduk"></ul>
+</body>
+<script type="module" src="./dist/DOMManipulation&FormData.js"></script>
+
+</html>
