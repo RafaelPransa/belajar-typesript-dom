@@ -1,0 +1,14 @@
+# 1. Folder dependensi (ukurannya sangat besar)
+node_modules/
+
+# 2. Folder hasil kompilasi TypeScript
+dist/
+
+# 3. File log error
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# 4. File sampah sistem operasi
+.DS_Store
+Thumbs.db
