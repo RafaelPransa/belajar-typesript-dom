@@ -17,6 +17,21 @@ if (
     daftarProduk instanceof HTMLUListElement
 ) {
     // Requirement 2 - Form Subit
+    kategori.addEventListener("change", () => {
+        console.info(kategori.value);
+    });
+
+    // Requirement 7 — Buat Object
+    interface Product {
+        nama: string;
+        harga: number;
+        stok: number;
+        kategori: string;
+    }
+
+    // Bonus 2 - Challenge
+    const daftarProdukData: Product[] = [];
+
     productForm.addEventListener("submit", (event) => {
         event.preventDefault();
 
@@ -28,13 +43,13 @@ if (
         }
         // Requirement 4 - Validasi harga
         const validasiHarga = Number(harga.value);
-        if (validasiHarga < 1) {
+        if (!Number.isFinite(validasiHarga) || validasiHarga < 1) {
             error.textContent = "Harga harus lebih dari 0";
             return;
         }
         // Requirement 5 - Validasi Stok
         const validasiStok = Number(stok.value);
-        if (validasiStok < 1) {
+        if (!Number.isFinite(validasiStok) || validasiStok < 1) {
             error.textContent = "Stok harus lebih dari 0";
             return;
         }
@@ -43,28 +58,39 @@ if (
             error.textContent = "Kategori wajib dipilih";
             return;
         }
-        kategori.addEventListener("change", () => {
-            console.info(kategori.value);
-        });
-        // Requirement 7 — Buat Object
-        interface Product {
-            nama: string;
-            harga: number;
-            stok: number;
-            kategori: string;
-        }
+
         const product: Product = {
             nama: validasiNama,
             harga: validasiHarga,
             stok: validasiStok,
             kategori: kategori.value,
         }
-        error.textContent = "Data Produk Berhasil ditambahkan!";
-        // Requirement 8 - Tambah ke DOM
-        const itemProduk = document.createElement("li");
-        itemProduk.style.whiteSpace = "pre-line"; // Memberitahu browser agar merender \n sebagai baris baru
-        itemProduk.textContent = `${product.nama}\nHarga: ${product.harga}\nStok: ${product.stok}\nKategori: ${product.kategori}\n`;
-        daftarProduk.appendChild(itemProduk);
+
+        daftarProdukData.push(product);
+        renderProduct(product);
+        console.info(daftarProdukData);
+        console.info(`Produk dibawah harga 100 : ${daftarProdukData.filter(product => product.harga < 100).map(product => product.nama + "Rp." + product.harga).join(", ")}`);
+        console.info(daftarProdukData.length);
+
+
+        error.textContent = "DataProduk Berhasil ditambahkan!";
+
+        // const itemProduk = document.createElement("li");
+        // itemProduk.style.whiteSpace = "pre-line";
+        // itemProduk.textContent = `${product.nama}\nHarga: Rp.${product.harga}\nStok: ${product.stok}\nKategori: ${product.kategori}`;
+        // // Bonus 1 - Menambahkan node baru menggunakan append
+        // daftarProduk.append(itemProduk);
+
+        // Cara penulisan menggunakan function
+        function renderProduct(produk: Product): void {
+            const itemProduk = document.createElement("li");
+            itemProduk.style.whiteSpace = "pre-line";
+            itemProduk.textContent = `${produk.nama}\nHarga: Rp. ${produk.harga}\nStok: ${produk.stok}\nKategori: ${produk.kategori}`;
+
+            daftarProduk?.appendChild(itemProduk)
+        }
+
+
         // Requirement 9 - Reset Form
         productForm.reset();
     });
