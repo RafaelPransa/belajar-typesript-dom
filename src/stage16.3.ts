@@ -135,7 +135,6 @@ function setupApp(): void {
         statusText.textContent = "Mengambil data...";
 
         try {
-            // Timeout otomatis setelah 10 detik
             const timeoutSignal = AbortSignal.any([
                 controller.signal,
                 AbortSignal.timeout(10000),
