@@ -1,98 +1,138 @@
-function getErrorMessage(error: unknown): string {
-    if (error instanceof Error) return error.message;
-    return String(error);
+// 1. Custom Error Hierarchy
+export class HttpError extends Error {
+    constructor(public readonly status: number, statusText?: string) {
+        super(`HTTP error: ${status}${statusText ? ` ${statusText}` : ""}`);
+        this.name = "HttpError";
+    }
 }
 
-function tunggu(
-    ms: number,
-    signal: AbortSignal
-): Promise<void> {
+export class TimeoutError extends Error {
+    constructor(ms: number) {
+        super(`Request timed out after ${ms}ms`);
+        this.name = "TimeoutError";
+    }
+}
+
+// 2. Helper Sleep yang Cancellable
+export function sleep(ms: number, signal?: AbortSignal): Promise<void> {
     return new Promise((resolve, reject) => {
-        if (signal.aborted) {
-            reject(new Error("Request dibatalkan"));
-            return;
+        if (signal?.aborted) {
+            return reject(signal.reason ?? new DOMException("Aborted", "AbortError"));
         }
 
+        const onAbort = (): void => {
+            clearTimeout(timerId);
+            reject(signal?.reason ?? new DOMException("Aborted", "AbortError"));
+        };
+
         const timerId = setTimeout(() => {
-            signal.removeEventListener("abort", batalkan);
+            signal?.removeEventListener("abort", onAbort);
             resolve();
         }, ms);
 
-        function batalkan(): void {
-            clearTimeout(timerId);
-            reject(new Error("Request dibatalkan"));
-        }
-        signal.addEventListener("abort", batalkan, { once: true });
-    })
+        signal?.addEventListener("abort", onAbort, { once: true });
+    });
 }
 
-async function ambilProdukDenganRetry(
-    signal: AbortSignal
-): Promise<void> {
-    const maksimalPercobaan = 3;
-    const timeoutMs = 3000;
-    const jedaAwalMs = 500;
+// 3. Retry Policy Options & Type Definition
+export interface RetryOptions {
+    maxRetries?: number;
+    initialDelayMs?: number;
+    timeoutMs?: number;
+    signal?: AbortSignal;
+}
 
-    for (
-        let percobaan = 1;
-        percobaan <= maksimalPercobaan;
-        percobaan++
-    ) {
-        if (signal.aborted) {
-            throw new Error("Request dibatalkan");
-        };
+function isRetryableError(error: unknown): boolean {
+    if (error instanceof TypeError) return true; // Network failure
+    if (error instanceof TimeoutError) return true;
+    if (error instanceof HttpError) {
+        return error.status === 408 || error.status === 429 || error.status >= 500;
+    }
+    return false;
+}
 
-        const controller = new AbortController();
-        let timeoutTerjadi = false;
+// 4. Reusable Generic Fetcher
+export async function fetchWithRetry<T>(
+    input: RequestInfo | URL,
+    init?: RequestInit,
+    options: RetryOptions = {}
+): Promise<T> {
+    const {
+        maxRetries = 3,
+        initialDelayMs = 500,
+        timeoutMs = 3000,
+        signal: externalSignal
+    } = options;
 
-        const batalkan = (): void => controller.abort();
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        if (externalSignal?.aborted) {
+            throw externalSignal.reason ?? new DOMException("Aborted", "AbortError");
+        }
 
-        signal.addEventListener("abort", batalkan, { once: true });
-
-        // 1. Buat timeout untuk percobaan ini.
-        const timerId = setTimeout(() => {
-            timeoutTerjadi = true;
-            controller.abort();
+        // Gabungkan timeout signal dan external signal
+        const timeoutController = new AbortController();
+        const timeoutId = setTimeout(() => {
+            timeoutController.abort(new TimeoutError(timeoutMs));
         }, timeoutMs);
+
+        // Listen abort dari luar jika user membatalkan
+        const onExternalAbort = (): void => {
+            timeoutController.abort(externalSignal?.reason);
+        };
+        externalSignal?.addEventListener("abort", onExternalAbort, { once: true });
+
         try {
-            // 2. Ambil data menggunakan fetch().
-            const response = await fetch("https://dummyjson.com/products/1",
-                { signal: controller.signal }
-            );
-            // 3. Periksa response.ok.
-            if (!response.ok) throw new Error(`HTTP error!: ${response.status}`);
-            // 4. Tampilkan data jika berhasil.
-            const data: unknown = await response.json();
-            console.log("Produk berhasil diambil:", data);
-            return;
+            const response = await fetch(input, {
+                ...init,
+                signal: timeoutController.signal,
+            });
+
+            if (!response.ok) {
+                throw new HttpError(response.status, response.statusText);
+            }
+
+            return (await response.json()) as T;
         } catch (error: unknown) {
-            // 5. Jika signal dibatalkan, jangan retry.
-            if (signal.aborted) throw new Error("Request dibatalkan!");
+            // Jika dibatalkan sengaja oleh user luar, jangan retry
+            if (externalSignal?.aborted) {
+                throw externalSignal.reason ?? error;
+            }
 
-            const errorAkhir = timeoutTerjadi ? new Error("Request timeout") : error;
+            // Cek jika error diakibatkan timeout controller kita
+            const resolvedError =
+                timeoutController.signal.aborted &&
+                    timeoutController.signal.reason instanceof TimeoutError
+                    ? timeoutController.signal.reason
+                    : error;
 
-            // 6. Jika percobaan terakhir, tampilkan error.
-            if (percobaan === maksimalPercobaan) throw error;
-            // 7. Selain itu, tunggu dengan exponential backoff.
-            const jeda = jedaAwalMs * 2 ** (percobaan - 1);
+            if (attempt === maxRetries || !isRetryableError(resolvedError)) {
+                throw resolvedError;
+            }
 
-            console.warn(`Percobaan ${percobaan} gagal. Retry dalam ${jeda} ms`);
+            // Exponential backoff dengan Full Jitter
+            const baseDelay = initialDelayMs * 2 ** (attempt - 1);
+            const jitteredDelay = Math.floor(Math.random() * baseDelay);
 
-            await tunggu(jeda, signal);
+            console.warn(
+                `Attempt ${attempt} failed (${getErrorMessage(resolvedError)}). Retrying in ${jitteredDelay}ms...`
+            );
+
+            await sleep(jitteredDelay, externalSignal);
         } finally {
-            // 8. Bersihkan timer timeout.
-            clearTimeout(timerId);
-            signal.removeEventListener("abort", batalkan);
+            clearTimeout(timeoutId);
+            externalSignal?.removeEventListener("abort", onExternalAbort);
         }
     }
+
+    throw new Error("Unexpected retry loop termination");
+}
+
+export function getErrorMessage(error: unknown): string {
+    return error instanceof Error ? error.message : String(error);
 }
 
 const controller = new AbortController();
-ambilProdukDenganRetry(controller.signal).catch(
-    (error: unknown) => {
-        console.error(getErrorMessage(error));
-    }
-);
 
-// untuk membatalkan request gunakan
-// controller.abort();
+fetchWithRetry("https://dummyjson.com/products/1", {}, { signal: controller.signal })
+    .then((data) => console.log("Hasil data:", data))
+    .catch((err) => console.error("Gagal:", getErrorMessage(err)));
